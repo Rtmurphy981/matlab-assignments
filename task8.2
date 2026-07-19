@@ -1,0 +1,161 @@
+%define joint coordinates
+A=[1.4   0.485 0];
+B=[1.67  0.99  0];
+C=[0.255 1.035 0];
+D=[0.285 0.055 0];
+E=[0.195 2.54  0];
+F=[-0.98 2.57  0];
+G=[0.05  0.2   0];
+
+%define link lengths
+Length_AB = norm(B-A);
+Length_BC = norm(C-B);
+Length_CE = norm(E-C);
+Length_CD = norm(D-C);
+Length_DE = norm(E-D);
+Length_EF = norm(F-E);
+Length_FG = norm(G-F);
+
+%define centers of mass
+S1 = (A+B)/2;   % Center of mass of link AB
+S2 = (B+C)/2; % Center of mass of link BC
+S3 = (C+D+E)/3;   % Center of mass of link CDE
+S4 = (E+F)/2;   % Center of mass of link EF
+S5 = (F+G)/2;   % Center of mass of link FG
+
+%Force of artifact acting directly above point F
+H = F + [0 1.843 0];
+Force_artifact = [0 -100 0];
+
+%Static Equilibrium Equations
+%using symbolic method
+
+
+syms FAx FAy FBx FBy FCx FCy FDx FDy FEx FEy FFx FFy FGx FGy Tin
+
+%define Force Vectors
+
+FA = [FAx FAy 0];
+FB = [FBx FBy 0];
+FC = [FCx FCy 0];
+FD = [FDx FDy 0];
+FE = [FEx FEy 0];
+FF = [FFx FFy 0];
+FG = [FGx FGy 0];
+Torque = [0 0 Tin];
+%displaying length of links
+disp(['Length of link AB = ' num2str(Length_AB) ' m']);
+disp(['Length of link BC = ' num2str(Length_BC) ' m']);
+disp(['Length of link CE = ' num2str(Length_CE) ' m']);
+disp(['Length of link CD = ' num2str(Length_CD) ' m']);
+disp(['Length of link CDE = ' num2str(Length_CD+Length_DE) ' m']);
+disp(['Length of link EF = ' num2str(Length_EF) ' m']);
+disp(['Length of link FG = ' num2str(Length_FG) ' m']);%Mass of each link
+
+Mass_AB = 10;
+Mass_BC=10;
+Mass_CDE=10;
+Mass_EF=10;
+Mass_FG=10;
+
+%Applied load
+
+Force_Input = [100 0 0];
+
+%Equilibrium equations:
+
+%LinkAB
+%Sum of forces = 0; Fa+FB+W_Ab = 0;
+
+Weight_AB=[0 -Mass_AB*9.81 0];
+
+eqn1 = FA + FB + Weight_AB == 0;
+
+%Sum of Torques = 0; S1A x Fa +s1b x fb +Tin+0;
+
+eqn2=cross(A-S1,FA) + cross(B-S1,FB)+Torque==0;
+
+%Link BC
+%Sum of forces = 0; -fb+fc+w_bc=0;
+
+Weight_BC=[0 -Mass_BC*9.81 0];
+eqn3 = -FB + FC + Weight_BC == 0;
+
+%Sum of Torque =0; S2b x -fb +s2c x fc=0;
+
+eqn4 = cross(B-S2,-FB) + cross(C-S2,FC) == 0;
+
+%Link CDE
+%sum of forces =0 ; -fc +fd +fe +weight_cde =0;
+
+Weight_CDE =[0 -Mass_CDE*9.81 0];
+eqn5 = -FC +FD + FE+ Weight_CDE ==0;
+
+%sum of torque =0; s3c x -fc +s3d x fd +s3e x fe=0;
+
+eqn6=cross(C-S3,-FC) + cross(D-S3,FD) + cross(E-S3,FE)==0;
+%Link ef
+%sum of forces = 0; -fe+ff+weight_ef=0;
+
+Weight_EF = [0 -Mass_EF*9.81 0];
+
+eqn7 = -FE + FF + Weight_EF==0;
+
+%Sum of torques=0;
+
+eqn8 = cross(E-S4, -FE)+cross(F-S4,FF)==0;
+
+%weight vectors for all links 
+
+Weight_AB = [0 -Mass_AB*9.81 0];
+Weight_BC  = [0 -Mass_BC*9.81  0];
+Weight_CDE = [0 -Mass_CDE*9.81 0];
+Weight_EF  = [0 -Mass_EF*9.81  0];
+Weight_FG  = [0 -Mass_FG*9.81  0];
+
+%Link FG
+%Sum of forces = 0; -ff+fg+weight_fg+force_artifact = 0;
+eqn9  = -FF + FG + Weight_FG + Force_artifact == 0;
+eqn10 = cross(F-S5,-FF) + cross(G-S5,FG) + cross(H-S5,Force_artifact) == 0;
+eqns=[eqn1; eqn2; eqn3; eqn4; eqn5; eqn6; eqn7; eqn8; eqn9; eqn10];
+solution=solve(eqns,[FAx, FAy, FBx, FBy, FCx, FCy, FDx, FDy, FEx, FEy, FFx, FFy, FGx, FGy, Tin]);
+
+%Extracting from the solution
+FA = [solution.FAx, solution.FAy, 0];
+FB = [solution.FBx, solution.FBy, 0];
+FC = [solution.FCx, solution.FCy, 0];
+FD = [solution.FDx, solution.FDy, 0];
+FE = [solution.FEx, solution.FEy, 0];
+FF = [solution.FFx, solution.FFy, 0];
+FG = [solution.FGx, solution.FGy, 0];
+Tin = solution.Tin;
+
+FA = double([solution.FAx, solution.FAy, 0]);
+FB = [solution.FBx, solution.FBy, 0];
+FC = [solution.FCx, solution.FCy, 0];
+FD = [solution.FDx, solution.FDy, 0];
+FE = [solution.FEx, solution.FEy, 0];
+FF = [solution.FFx, solution.FFy, 0];
+FG = [solution.FGx, solution.FGy, 0];
+StaticTorque = double(solution.Tin);
+
+
+% Extracting solutions
+FA = double([solution.FAx, solution.FAy, 0]);
+FB = double([solution.FBx, solution.FBy, 0]);
+FC = double([solution.FCx, solution.FCy, 0]);
+FD = double([solution.FDx, solution.FDy, 0]);
+FE = double([solution.FEx, solution.FEy, 0]);
+FF = double([solution.FFx, solution.FFy, 0]);
+FG = double([solution.FGx, solution.FGy, 0]);
+StaticTorque = double(solution.Tin);
+
+% Display results
+disp(['Static Torque: ' num2str(StaticTorque)]);
+disp(['FA = [' num2str(FA(1)) ', ' num2str(FA(2)) ', ' num2str(FA(3)) '] N']);
+disp(['FB = [' num2str(FB(1)) ', ' num2str(FB(2)) ', ' num2str(FB(3)) '] N']);
+disp(['FC = [' num2str(FC(1)) ', ' num2str(FC(2)) ', ' num2str(FC(3)) '] N']);
+disp(['FD = [' num2str(FD(1)) ', ' num2str(FD(2)) ', ' num2str(FD(3)) '] N']);
+disp(['FE = [' num2str(FE(1)) ', ' num2str(FE(2)) ', ' num2str(FE(3)) '] N']);
+disp(['FF = [' num2str(FF(1)) ', ' num2str(FF(2)) ', ' num2str(FF(3)) '] N']);
+disp(['FG = [' num2str(FG(1)) ', ' num2str(FG(2)) ', ' num2str(FG(3)) '] N']);
