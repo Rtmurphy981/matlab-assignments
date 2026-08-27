@@ -1,0 +1,210 @@
+%% linkage_sim_with_static.m
+clc; clear;
+
+% joint coordinates (1x3 vectors)
+A = [1.4 0.485 0];
+B = [1.67 0.99 0];
+C = [0.255 1.035 0];
+D = [0.285 0.055 0];
+E = [0.195 2.54 0];
+F = [-0.98 2.57 0];
+G = [0.05 0.2 0];
+
+% link lengths
+AB = norm(A-B);
+BC = norm(B-C);
+CD = norm(C-D);
+BE = norm(B-E);
+CE = norm(C-E);
+EF = norm(E-F);
+FG = norm(F-G);
+
+% initial angle of AB in [0,2pi)
+initial_angle_AB = atan2(B(2)-A(2), B(1)-A(1));
+if initial_angle_AB < 0, initial_angle_AB = initial_angle_AB + 2*pi; end
+
+% preallocate
+numSteps = 360;
+new_Bx = nan(1,numSteps+1); new_By = nan(1,numSteps+1);
+new_Cx = nan(1,numSteps+1); new_Cy = nan(1,numSteps+1);
+new_Ex = nan(1,numSteps+1); new_Ey = nan(1,numSteps+1);
+new_Fx = nan(1,numSteps+1); new_Fy = nan(1,numSteps+1);
+new_Hx = nan(1,numSteps+1); new_Hy = nan(1,numSteps+1);
+
+new_Bx(1)=B(1); new_By(1)=B(2);
+new_Cx(1)=C(1); new_Cy(1)=C(2);
+new_Ex(1)=E(1); new_Ey(1)=E(2);
+new_Fx(1)=F(1); new_Fy(1)=F(2);
+H = F + [0 1.843 0];
+new_Hx(1)=H(1); new_Hy(1)=H(2);
+
+% storage for forces and torque
+Fy_store = nan(numSteps,7);
+Tin_store = nan(numSteps,1);
+stepIndex = 0;
+
+lastIdx = 1;
+for theta = 1:360
+    ang = initial_angle_AB + deg2rad(theta);
+    B_new = A + [AB*cos(ang), AB*sin(ang), 0];
+
+    % C: intersection of circle(B_new,BC) and circle(D,CD)
+    ptsC = circleCircleIntersection(B_new(1:2), BC, D(1:2), CD);
+    if isempty(ptsC), fprintf('C undefined at %d deg\n', theta); break; end
+    C_new = chooseClosestPoint(ptsC, C(1:2));
+
+    % E: intersection of circle(B_new,BE) and circle(C_new,CE)
+    ptsE = circleCircleIntersection(B_new(1:2), BE, C_new, CE);
+    if isempty(ptsE), fprintf('E undefined at %d deg\n', theta); break; end
+    E_new = chooseClosestPoint(ptsE, E(1:2));
+
+    % F: intersection of circle(E_new,EF) and circle(G,FG)
+    ptsF = circleCircleIntersection(E_new, EF, G(1:2), FG);
+    if isempty(ptsF), fprintf('F undefined at %d deg\n', theta); break; end
+    F_new = chooseClosestPoint(ptsF, F(1:2));
+
+    % store positions
+    lastIdx = lastIdx + 1;
+    new_Bx(lastIdx)=B_new(1); new_By(lastIdx)=B_new(2);
+    new_Cx(lastIdx)=C_new(1); new_Cy(lastIdx)=C_new(2);
+    new_Ex(lastIdx)=E_new(1); new_Ey(lastIdx)=E_new(2);
+    new_Fx(lastIdx)=F_new(1); new_Fy(lastIdx)=F_new(2);
+    H_new = F_new + [0 1.843];
+    new_Hx(lastIdx)=H_new(1); new_Hy(lastIdx)=H_new(2);
+
+    % update for next iter
+    B = B_new; C = [C_new 0]; E = [E_new 0]; F = [F_new 0];
+
+    % static analysis
+    stepIndex = stepIndex + 1;
+    try
+        Fvecs = static_analysis_linkage(A,B,C,D,E,F,G);   % returns 8x3, row8 = [0 0 Tin]
+    catch ME
+        warning('static analysis failed at step %d: %s', theta, ME.message);
+        break;
+    end
+    Fy_store(stepIndex, :) = Fvecs(1:7,2)';   % Fy of FA..FG
+    Tin_store(stepIndex) = Fvecs(8,3);
+
+    % Print forces for A..G, artifact force at H, and input torque Tin
+    fprintf('Step %d (theta=%d deg):\n', stepIndex, theta);
+    fprintf(' FA = [%.4f, %.4f, %.4f]\n', Fvecs(1,1), Fvecs(1,2), Fvecs(1,3));
+    fprintf(' FB = [%.4f, %.4f, %.4f]\n', Fvecs(2,1), Fvecs(2,2), Fvecs(2,3));
+    fprintf(' FC = [%.4f, %.4f, %.4f]\n', Fvecs(3,1), Fvecs(3,2), Fvecs(3,3));
+    fprintf(' FD = [%.4f, %.4f, %.4f]\n', Fvecs(4,1), Fvecs(4,2), Fvecs(4,3));
+    fprintf(' FE = [%.4f, %.4f, %.4f]\n', Fvecs(5,1), Fvecs(5,2), Fvecs(5,3));
+    fprintf(' FF = [%.4f, %.4f, %.4f]\n', Fvecs(6,1), Fvecs(6,2), Fvecs(6,3));
+    fprintf(' FG = [%.4f, %.4f, %.4f]\n', Fvecs(7,1), Fvecs(7,2), Fvecs(7,3));
+    % artifact force at H (defined in static_analysis_linkage)
+    fprintf(' H artifact Force = [%.4f, %.4f, %.4f]\n', 0.0, -100.0, 0.0);
+    fprintf(' Input Torque Tin = %.4f\n\n', Fvecs(8,3));
+end
+
+% trim arrays
+new_Bx = new_Bx(1:lastIdx); new_By = new_By(1:lastIdx);
+new_Cx = new_Cx(1:lastIdx); new_Cy = new_Cy(1:lastIdx);
+new_Ex = new_Ex(1:lastIdx); new_Ey = new_Ey(1:lastIdx);
+new_Fx = new_Fx(1:lastIdx); new_Fy = new_Fy(1:lastIdx);
+new_Hx = new_Hx(1:lastIdx); new_Hy = new_Hy(1:lastIdx);
+
+Fy_store = Fy_store(1:stepIndex, :);
+Tin_store = Tin_store(1:stepIndex);
+steps = (1:stepIndex)';
+
+% Plot trajectories
+figure;
+plot(new_Bx,new_By,'r', new_Cx,new_Cy,'g', new_Ex,new_Ey,'b', new_Fx,new_Fy,'k', new_Hx,new_Hy,'m','LineWidth',1.2);
+axis equal; grid on; title('Linkage Motion'); legend('B','C','E','F','H');
+
+% Plot vertical reaction forces
+figure;
+plot(steps, Fy_store, 'LineWidth', 1.2);
+xlabel('Step'); ylabel('F_y (N)'); grid on;
+legend('FA_y','FB_y','FC_y','FD_y','FE_y','FF_y','FG_y','Location','best');
+title('Vertical Reaction Forces vs Step');
+
+% Plot input torque
+figure;
+plot(steps, Tin_store, '-k', 'LineWidth', 1.6);
+xlabel('Force'); ylabel('Input Torque (N·m)'); grid on;
+title('Input Torque vs Force');
+
+%% Local helper: circle-circle intersection
+function pts = circleCircleIntersection(c1, r1, c2, r2)
+    d = norm(c2 - c1);
+    if d < abs(r1-r2) || d > (r1+r2) || (d==0 && r1==r2)
+        pts = [];
+        return;
+    end
+    a = (r1^2 - r2^2 + d^2) / (2*d);
+    h = sqrt(max(0, r1^2 - a^2));
+    p2 = c1 + a*(c2 - c1)/d;
+    rx = -(c2(2)-c1(2))*(h/d);
+    ry =  (c2(1)-c1(1))*(h/d);
+    pnt1 = p2 + [rx, ry];
+    pnt2 = p2 - [rx, ry];
+    if h==0
+        pts = pnt1;
+    else
+        pts = [pnt1; pnt2];
+    end
+end
+
+%% Local helper: choose closest point
+function chosen = chooseClosestPoint(pts, ref)
+    if isempty(pts), chosen = []; return; end
+    dists = sqrt(sum((pts - ref).^2, 2));
+    [~, idx] = min(dists);
+    chosen = pts(idx, :);
+end
+
+%% Local function: static analysis (symbolic equilibrium)
+function forces = static_analysis_linkage(A,B,C,D,E,F,G)
+    % returns 8x3: rows FA..FG and [0 0 Tin] in row 8
+    S1 = (A + B)/2; S2 = (B + C)/2; S3 = (C + D + E)/3;
+    S4 = (E + F)/2; S5 = (F + G)/2;
+    H = F + [0 1.843 0];
+    Force_artifact = [0 -100 0];
+    Mass_AB = 10; Mass_BC = 10; Mass_CDE = 10; Mass_EF = 10; Mass_FG = 10;
+
+    syms FAx FAy FBx FBy FCx FCy FDx FDy FEx FEy FFx FFy FGx FGy Tin real
+    FA = [FAx FAy 0]; FB = [FBx FBy 0]; FC = [FCx FCy 0];
+    FD = [FDx FDy 0]; FE = [FEx FEy 0]; FF = [FFx FFy 0];
+    FGsym = [FGx FGy 0]; Torque = [0 0 Tin];
+
+    Weight_AB  = [0 -Mass_AB*9.81 0];
+    Weight_BC  = [0 -Mass_BC*9.81 0];
+    Weight_CDE = [0 -Mass_CDE*9.81 0];
+    Weight_EF  = [0 -Mass_EF*9.81 0];
+    Weight_FG  = [0 -Mass_FG*9.81 0];
+
+    eqn1 = FA + FB + Weight_AB == [0 0 0];
+    eqn2 = cross(A - S1, FA) + cross(B - S1, FB) + Torque == [0 0 0];
+    eqn3 = -FB + FC + Weight_BC == [0 0 0];
+    eqn4 = cross(B - S2, -FB) + cross(C - S2, FC) == [0 0 0];
+    eqn5 = -FC + FD + FE + Weight_CDE == [0 0 0];
+    eqn6 = cross(C - S3, -FC) + cross(D - S3, FD) + cross(E - S3, FE) == [0 0 0];
+    eqn7 = -FE + FF + Weight_EF == [0 0 0];
+    eqn8 = cross(E - S4, -FE) + cross(F - S4, FF) == [0 0 0];
+    eqn9 = -FF + FGsym + Weight_FG + Force_artifact == [0 0 0];
+    eqn10 = cross(F - S5, -FF) + cross(G - S5, FGsym) + cross(H - S5, Force_artifact) == [0 0 0];
+
+    eqns = [eqn1; eqn2; eqn3; eqn4; eqn5; eqn6; eqn7; eqn8; eqn9; eqn10];
+    vars = [FAx FAy FBx FBy FCx FCy FDx FDy FEx FEy FFx FFy FGx FGy Tin];
+
+    S = solve(eqns, vars, 'ReturnConditions', false);
+    if isempty(S) || ~isfield(S,'FAx')
+        error('static_analysis_linkage:NoSolution','No symbolic solution for this geometry.');
+    end
+
+    FA_n = double([S.FAx, S.FAy, 0]);
+    FB_n = double([S.FBx, S.FBy, 0]);
+    FC_n = double([S.FCx, S.FCy, 0]);
+    FD_n = double([S.FDx, S.FDy, 0]);
+    FE_n = double([S.FEx, S.FEy, 0]);
+    FF_n = double([S.FFx, S.FFy, 0]);
+    FG_n = double([S.FGx, S.FGy, 0]);
+    Tin_n = double(S.Tin);
+
+    forces = [FA_n; FB_n; FC_n; FD_n; FE_n; FF_n; FG_n; [0 0 Tin_n]];
+end
