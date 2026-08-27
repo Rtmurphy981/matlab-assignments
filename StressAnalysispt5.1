@@ -1,0 +1,63 @@
+function forces = static_analysis_linkage(A,B,C,D,E,F,G)
+% STATIC_ANALYSIS_LINKAGE  Compute reaction forces and input torque
+% forces is 8x3: rows FA..FG and row8 = [0 0 Tin]
+
+% define centers of mass
+S1 = (A + B)/2;
+S2 = (B + C)/2;
+S3 = (C + D + E)/3;
+S4 = (E + F)/2;
+S5 = (F + G)/2;
+
+% artifact and masses
+H = F + [0 1.843 0];
+Force_artifact = [0 -100 0];
+Mass_AB = 10; Mass_BC = 10; Mass_CDE = 10; Mass_EF = 10; Mass_FG = 10;
+
+% symbolic unknowns
+syms FAx FAy FBx FBy FCx FCy FDx FDy FEx FEy FFx FFy FGx FGy Tin real
+
+% force vectors
+FA = [FAx FAy 0]; FB = [FBx FBy 0]; FC = [FCx FCy 0];
+FD = [FDx FDy 0]; FE = [FEx FEy 0]; FF = [FFx FFy 0];
+FGsym = [FGx FGy 0]; Torque = [0 0 Tin];
+
+% weights
+Weight_AB  = [0 -Mass_AB*9.81 0];
+Weight_BC  = [0 -Mass_BC*9.81 0];
+Weight_CDE = [0 -Mass_CDE*9.81 0];
+Weight_EF  = [0 -Mass_EF*9.81 0];
+Weight_FG  = [0 -Mass_FG*9.81 0];
+
+% equilibrium equations (use your existing eqns here)
+eqn1 = FA + FB + Weight_AB == [0 0 0];
+eqn2 = cross(A - S1, FA) + cross(B - S1, FB) + Torque == [0 0 0];
+eqn3 = -FB + FC + Weight_BC == [0 0 0];
+eqn4 = cross(B - S2, -FB) + cross(C - S2, FC) == [0 0 0];
+eqn5 = -FC + FD + FE + Weight_CDE == [0 0 0];
+eqn6 = cross(C - S3, -FC) + cross(D - S3, FD) + cross(E - S3, FE) == [0 0 0];
+eqn7 = -FE + FF + Weight_EF == [0 0 0];
+eqn8 = cross(E - S4, -FE) + cross(F - S4, FF) == [0 0 0];
+eqn9 = -FF + FGsym + Weight_FG + Force_artifact == [0 0 0];
+eqn10 = cross(F - S5, -FF) + cross(G - S5, FGsym) + cross(H - S5, Force_artifact) == [0 0 0];
+
+eqns = [eqn1; eqn2; eqn3; eqn4; eqn5; eqn6; eqn7; eqn8; eqn9; eqn10];
+vars = [FAx FAy FBx FBy FCx FCy FDx FDy FEx FEy FFx FFy FGx FGy Tin];
+
+S = solve(eqns, vars, 'ReturnConditions', false);
+
+if isempty(S) || ~isfield(S,'FAx')
+    error('static_analysis_linkage:NoSolution', 'No symbolic solution found for the given geometry.');
+end
+
+FA_n = double([S.FAx, S.FAy, 0]);
+FB_n = double([S.FBx, S.FBy, 0]);
+FC_n = double([S.FCx, S.FCy, 0]);
+FD_n = double([S.FDx, S.FDy, 0]);
+FE_n = double([S.FEx, S.FEy, 0]);
+FF_n = double([S.FFx, S.FFy, 0]);
+FG_n = double([S.FGx, S.FGy, 0]);
+Tin_n = double(S.Tin);
+
+forces = [FA_n; FB_n; FC_n; FD_n; FE_n; FF_n; FG_n; [0 0 Tin_n]];
+end
