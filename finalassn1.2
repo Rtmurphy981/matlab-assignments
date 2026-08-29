@@ -1,0 +1,47 @@
+
+
+% Differential equation car bumper problem ode 45
+
+% Mx'' + Dx' + Kx = 0
+
+
+% Define parameters
+M = 8;   % Mass in kg
+D = 50;  % Damping coefficient in Ns/m
+K = 100; % Spring constant in N/m
+
+% x' = p/M 
+% p' = -D * p/M - Kx
+% Defining the system of equations as a function
+odeSystem = @(t, x) [x(2) / M; (-D * x(2)) / M - K * x(1)];
+
+% Setting initial conditions
+initialConditions = [0; 10*M]; 
+% Time span for the simulation
+tSpan = [0, 10]; 
+
+% Solve the ODE
+[t, x] = ode45(odeSystem, tSpan, initialConditions);
+% plot functions
+
+% Plot the position and momentum over time
+figure;
+subplot(2, 1, 1);
+plot(t, x(:, 1), 'b-', 'LineWidth', 2);
+xlabel('Time (s)');
+ylabel('Position (m)');
+title('Position vs Time');
+grid on;
+
+subplot(2, 1, 2);
+plot(t, x(:, 2), 'r-', 'LineWidth', 2);
+xlabel('Time (s)');
+ylabel('Momentum (Ns)');
+title('Momentum vs Time');
+grid on;
+
+% Add legends to the plots for clarity
+subplot(2, 1, 1);
+legend('Position');
+subplot(2, 1, 2);
+legend('Momentum');
