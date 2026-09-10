@@ -1,0 +1,1107 @@
+classdef appfinal < matlab.apps.AppBase
+
+    % Properties that correspond to app components
+    properties (Access = public)
+        UIFigure                        matlab.ui.Figure
+        TabGroup                        matlab.ui.container.TabGroup
+        jointlinkageTab                 matlab.ui.container.Tab
+        ProgressLamp                    matlab.ui.control.Lamp
+        ProgressLampLabel               matlab.ui.control.Label
+        DyEditField                     matlab.ui.control.NumericEditField
+        DyEditFieldLabel                matlab.ui.control.Label
+        DxEditField                     matlab.ui.control.NumericEditField
+        DxEditFieldLabel                matlab.ui.control.Label
+        CyEditField                     matlab.ui.control.NumericEditField
+        CyEditFieldLabel                matlab.ui.control.Label
+        CxEditField                     matlab.ui.control.NumericEditField
+        CxEditFieldLabel                matlab.ui.control.Label
+        ByEditField                     matlab.ui.control.NumericEditField
+        ByEditFieldLabel                matlab.ui.control.Label
+        BxEditField                     matlab.ui.control.NumericEditField
+        BxEditFieldLabel                matlab.ui.control.Label
+        AyEditField                     matlab.ui.control.NumericEditField
+        AyEditFieldLabel                matlab.ui.control.Label
+        AxEditField                     matlab.ui.control.NumericEditField
+        AxEditFieldLabel                matlab.ui.control.Label
+        GenerateLinkageButton           matlab.ui.control.Button
+        ComputepositionAnalysisButton   matlab.ui.control.Button
+        ShowmovementButton              matlab.ui.control.Button
+        DownloaddataButton              matlab.ui.control.Button
+        UIAxes                          matlab.ui.control.UIAxes
+        jointlinkageTab_2               matlab.ui.container.Tab
+        ProgressLamp_2                  matlab.ui.control.Lamp
+        ProgressLamp_2Label             matlab.ui.control.Label
+        DyEditField_2                   matlab.ui.control.NumericEditField
+        DyEditField_2Label              matlab.ui.control.Label
+        DxEditField_2                   matlab.ui.control.NumericEditField
+        DxEditField_2Label              matlab.ui.control.Label
+        CyEditField_2                   matlab.ui.control.NumericEditField
+        CyEditField_2Label              matlab.ui.control.Label
+        CxEditField_2                   matlab.ui.control.NumericEditField
+        CxEditField_2Label              matlab.ui.control.Label
+        ByEditField_2                   matlab.ui.control.NumericEditField
+        ByEditField_2Label              matlab.ui.control.Label
+        BxEditField_2                   matlab.ui.control.NumericEditField
+        BxEditField_2Label              matlab.ui.control.Label
+        AyEditField_2                   matlab.ui.control.NumericEditField
+        AyEditField_2Label              matlab.ui.control.Label
+        AxEditField_2                   matlab.ui.control.NumericEditField
+        AxEditField_2Label              matlab.ui.control.Label
+        GenerateLinkageButton_2         matlab.ui.control.Button
+        ComputepositionAnalysisButton2  matlab.ui.control.Button
+        ShowmovementButton_2            matlab.ui.control.Button
+        DownloaddataButton_2            matlab.ui.control.Button
+        FyEditField                     matlab.ui.control.NumericEditField
+        FyEditFieldLabel                matlab.ui.control.Label
+        FxEditField                     matlab.ui.control.NumericEditField
+        FxEditFieldLabel                matlab.ui.control.Label
+        EyEditField                     matlab.ui.control.NumericEditField
+        EyEditFieldLabel                matlab.ui.control.Label
+        ExEditField                     matlab.ui.control.NumericEditField
+        ExEditFieldLabel                matlab.ui.control.Label
+        UIAxes_2                        matlab.ui.control.UIAxes
+    end
+
+    
+    properties (Access = private)
+        Property % Description
+        
+   
+    
+    numSteps=360
+
+    new_B_joint_x
+    new_B_joint_y
+    new_C_joint_x
+    new_C_joint_y
+
+    new_E_joint_x
+    new_E_joint_y
+    new_F_joint_x
+    new_F_joint_y
+
+    lastIdx
+
+  
+
+    end
+    
+    methods (Access = private)
+        
+        function pts = circleCircleIntersection(app,c1,r1,c2,r2)
+            % declare symbolic variables
+            syms x y
+
+            % build equations
+            eq1 = (x - c1(1))^2 + (y - c1(2))^2 == r1^2;
+            eq2 = (x - c2(1))^2 + (y - c2(2))^2 == r2^2;
+
+            % solve symbolically
+            S = solve([eq1, eq2], [x, y]);
+
+            % handle empty/failed solve
+            if isempty(fieldnames(S))
+                pts = [];
+                return;
+            end
+
+            sx = S.x;
+            sy = S.y;
+
+            % ensure column vectors
+            sx = sx(:);
+            sy = sy(:);
+
+            % keep only solutions that are symbolically real
+            isRealX = arrayfun(@(e) isAlways(imag(e) == 0), sx);
+            isRealY = arrayfun(@(e) isAlways(imag(e) == 0), sy);
+            realIdx = find(isRealX & isRealY);
+
+            if isempty(realIdx)
+                pts = [];
+                return;
+            end
+
+            % convert to double and form output
+            try
+                xs = double(sx(realIdx));
+                ys = double(sy(realIdx));
+            catch
+                % if conversion fails (rare), return empty
+                pts = [];
+                return;
+            end
+
+            pts = [xs, ys];
+
+        end
+        
+function chosen = chooseClosestPoint(app, pts, ref)
+    if isempty(pts)
+        chosen = [];
+        return;
+    end
+    dists = sqrt(sum((pts - ref).^2, 2));
+    [~, idx] = min(dists);
+    chosen = pts(idx, :);
+end
+            
+        
+    end
+    
+
+    % Callbacks that handle component events
+    methods (Access = private)
+
+        % Code that executes after component creation
+        function startupFcn(app)
+       
+                app.new_B_joint_x = zeros(1, app.numSteps + 1);
+                app.new_B_joint_y = zeros(1, app.numSteps + 1);
+                app.new_C_joint_x = zeros(1, app.numSteps + 1);
+                app.new_C_joint_y = zeros(1, app.numSteps + 1);
+            
+
+        end
+
+        % Button pushed function: GenerateLinkageButton
+        function generateLinkage(app, event)
+            % plot fixed ground points - A and D
+
+            plot(app.UIAxes,app.AxEditField.Value,app.AyEditField.Value,'ro','MarkerFaceColor','r');
+            hold(app.UIAxes,'on');
+            plot(app.UIAxes,app.DxEditField.Value,app.DyEditField.Value,'ro','MarkerFaceColor','r');
+            hold(app.UIAxes,'on');
+
+            %plot other two points - B and C
+            plot(app.UIAxes,app.BxEditField.Value,app.ByEditField.Value,'bo','MarkerFaceColor','b');
+            hold(app.UIAxes,'on');
+            plot(app.UIAxes,app.CxEditField.Value,app.CyEditField.Value,'bo','MarkerFaceColor','b');
+            hold(app.UIAxes,'on');
+
+            %Adjust size of axes UI element
+
+            X = [app.AxEditField.Value, app.BxEditField.Value, app.CxEditField.Value, app.DxEditField.Value];
+            Y = [app.AyEditField.Value, app.ByEditField.Value, app.CyEditField.Value, app.DyEditField.Value];
+
+            margin = 5;
+
+          plot(app.UIAxes, [app.AxEditField.Value, app.BxEditField.Value], [app.AyEditField.Value, app.ByEditField.Value], '--', 'Color', 'r', 'LineWidth', 2);
+          plot(app.UIAxes, [app.BxEditField.Value, app.CxEditField.Value], [app.ByEditField.Value, app.CyEditField.Value], '--', 'Color', 'g', 'LineWidth', 2);
+          plot(app.UIAxes, [app.CxEditField.Value, app.DxEditField.Value], [app.CyEditField.Value, app.DyEditField.Value], '--', 'Color', 'b', 'LineWidth', 2);
+
+            xMin = min(X) - margin;
+            xMax = max(X) + margin;
+            yMin = min(Y) - margin;
+            yMax = max(Y) + margin;
+
+            app.UIAxes.XLim = [xMin, xMax];
+            app.UIAxes.YLim = [yMin, yMax];
+
+            app.ComputepositionAnalysisButton.Enable="on";
+            app.ProgressLamp.Enable="on";
+            app.ProgressLampLabel.Enable="on";
+
+        end
+
+        % Button pushed function: ComputepositionAnalysisButton
+        function circleintersection(app, event)
+            app.ProgressLamp.Color = 'blue';
+            app.ProgressLampLabel.Text = 'In Progress';
+            drawnow;
+
+                A=[app.AxEditField.Value app.AyEditField.Value 0];
+                B=[app.BxEditField.Value app.ByEditField.Value 0];
+                C=[app.CxEditField.Value app.CyEditField.Value 0];
+                D=[app.DxEditField.Value app.DyEditField.Value 0];
+
+                % compute the initial angle of link AB, input link
+                initial_angle_AB = atan2(B(2)-A(2), B(1)-A(1));
+                if initial_angle_AB < 0
+                    initial_angle_AB = initial_angle_AB + 2*pi;
+                end
+
+                % initial values (index 1)
+                app.new_B_joint_x(1) = B(1); app.new_B_joint_y(1) = B(2);
+                app.new_C_joint_x(1) = C(1); app.new_C_joint_y(1) = C(2);
+
+                AB = norm(A-B);
+                BC = norm(B-C);
+                CD = norm(C-D);
+
+                app.lastIdx = 1;
+
+                for theta = 1:1:360
+                    % update B position
+                    B_new = A + [AB*cos(initial_angle_AB + deg2rad(theta)), ...
+                        AB*sin(initial_angle_AB + deg2rad(theta)), 0];
+                    app.new_B_joint_x(theta+1) = B_new(1);
+                    app.new_B_joint_y(theta+1) = B_new(2);
+                    app.lastIdx = theta;
+
+                    % Find C intersection of circle(B_new, BC) and circle(CD)
+                    ptsC = app.circleCircleIntersection(B_new(1:2), BC, D(1:2), CD);
+                    if isempty(ptsC)
+                        fprintf('New Position of C cannot be determined at angle: %d degree\n', theta);
+                        break;
+                    end
+
+                    C_new = app.chooseClosestPoint(ptsC, C(1:2));
+                    app.new_C_joint_x(theta+1) = C_new(1);
+                    app.new_C_joint_y(theta+1) = C_new(2);
+
+                    % update chain for next iteration
+                    B = B_new;
+                    C = [C_new 0];
+                end
+
+                app.new_B_joint_x = app.new_B_joint_x(1:app.lastIdx);
+                app.new_B_joint_y = app.new_B_joint_y(1:app.lastIdx);
+                app.new_C_joint_x = app.new_C_joint_x(1:app.lastIdx);
+                app.new_C_joint_y = app.new_C_joint_y(1:app.lastIdx);
+                app.ProgressLamp.Color = 'g';
+                app.ProgressLampLabel.Text = 'Done';
+
+app.ShowmovementButton.Enable = "on";
+app.DownloaddataButton.Enable = "on";
+
+        end
+
+        % Button pushed function: ShowmovementButton
+        function showMovement(app, event)
+            cla(app.UIAxes);
+            hold(app.UIAxes, 'on');
+
+            %% 1. Initialize Animated Trajectory Lines (Targeting app.UIAxes)
+            hTrajB = animatedline(app.UIAxes, 'Color', 'black', 'LineStyle', '-', 'LineWidth', 1.5);
+            hTrajC = animatedline(app.UIAxes, 'Color', 'magenta', 'LineStyle', '-', 'LineWidth', 1.5);
+
+            plot(app.UIAxes, app.DxEditField.Value, app.DyEditField.Value, 'rs', 'MarkerFaceColor', 'r');
+            plot(app.UIAxes, app.DxEditField.Value, app.DyEditField.Value, 'rs', 'MarkerFaceColor', 'r');
+
+            %% Links (initial coordinates at k = 1)
+            hAB = plot(app.UIAxes, [app.AxEditField.Value, app.new_B_joint_x(1)], [app.AyEditField.Value, app.new_B_joint_y(1)], 'r-', 'LineWidth', 2);
+            hBC = plot(app.UIAxes, [app.new_B_joint_x(1), app.new_C_joint_x(1)], [app.new_B_joint_y(1), app.new_C_joint_y(1)], 'g-', 'LineWidth', 2);
+            hCD = plot(app.UIAxes, [app.new_C_joint_x(1), app.DxEditField.Value], [app.new_C_joint_y(1), app.DyEditField.Value], 'b-', 'LineWidth', 2);
+
+            %% Joint Markers
+            hB = plot(app.UIAxes, app.new_B_joint_x(1), app.new_B_joint_y(1), 'bo', 'MarkerFaceColor', 'b');
+            hC = plot(app.UIAxes, app.new_C_joint_x(1), app.new_C_joint_y(1), 'bo', 'MarkerFaceColor', 'b');
+
+            %% 3. Configure Legend & Axis Limits
+            legend(app.UIAxes, {'Joint B Traj', 'Joint C Traj', 'Joint A', 'Joint D', 'link AB', 'Link BC', 'Link CD'}, 'Location', 'bestoutside');
+
+            %% Calculate fixed bounds so axes don't jump during animation
+            allx = [app.AxEditField.Value, app.DxEditField.Value, app.new_B_joint_x(1), app.new_C_joint_x(1)];
+            ally = [app.AyEditField.Value, app.DyEditField.Value, app.new_B_joint_y(1), app.new_C_joint_y(1)];
+            xmin = min(allx(:)) - 5; xmax = max(allx(:)) + 5;
+            ymin = min(ally(:)) - 5; ymax = max(ally(:)) + 5;
+            axis(app.UIAxes, [xmin xmax ymin ymax]);
+
+            for k = 1:1:app.lastIdx
+                % Update linkage segments
+                set(hAB, 'XData', [app.AxEditField.Value, app.new_B_joint_x(k)], 'YData', [app.AyEditField.Value, app.new_B_joint_y(k)]);
+                set(hBC, 'XData', [app.new_B_joint_x(k), app.new_C_joint_x(k)], 'YData', [app.new_B_joint_y(k), app.new_C_joint_y(k)]);
+                set(hCD, 'XData', [app.new_C_joint_x(k), app.DxEditField.Value], 'YData', [app.new_C_joint_y(k), app.DyEditField.Value]);
+
+                % Update moving joint markers
+                set(hB, 'XData', app.new_B_joint_x(k), 'YData', app.new_B_joint_y(k));
+                set(hC, 'XData', app.new_C_joint_x(k), 'YData', app.new_C_joint_y(k));
+
+                % Append trajectory paths
+                addpoints(hTrajB, app.new_B_joint_x(k), app.new_B_joint_y(k));
+                addpoints(hTrajC, app.new_C_joint_x(k), app.new_C_joint_y(k));
+
+                % Refresh App UI frame smoothly
+                drawnow limitrate;
+                pause(0.01); 
+            end
+
+            hold(app.UIAxes, 'off');
+
+        end
+
+        % Button pushed function: GenerateLinkageButton_2
+        function generateLinkage2(app, event)
+         
+
+ 
+
+    cla(app.UIAxes_2);
+    hold(app.UIAxes_2,'on');
+
+    % Input points
+    A = [app.AxEditField_2.Value app.AyEditField_2.Value];
+    B = [app.BxEditField_2.Value app.ByEditField_2.Value];
+    C = [app.CxEditField_2.Value app.CyEditField_2.Value];
+    D = [app.DxEditField_2.Value app.DyEditField_2.Value];
+    E = [app.ExEditField.Value   app.EyEditField.Value];
+    F = [app.FxEditField.Value   app.FyEditField.Value];
+
+    % Fixed point G
+    G = [0.5 0.6];
+
+    % Plot points
+    plot(app.UIAxes_2,A(1),A(2),'rs','MarkerFaceColor','r');
+    plot(app.UIAxes_2,D(1),D(2),'rs','MarkerFaceColor','r');
+    plot(app.UIAxes_2,G(1),G(2),'ys','MarkerFaceColor','y');
+
+    plot(app.UIAxes_2,B(1),B(2),'bo','MarkerFaceColor','b');
+    plot(app.UIAxes_2,C(1),C(2),'go','MarkerFaceColor','g');
+    plot(app.UIAxes_2,E(1),E(2),'mo','MarkerFaceColor','m');
+    plot(app.UIAxes_2,F(1),F(2),'co','MarkerFaceColor','c');
+
+    % Draw links
+    plot(app.UIAxes_2,[A(1) B(1)],[A(2) B(2)],'r-','LineWidth',2);
+    plot(app.UIAxes_2,[B(1) C(1)],[B(2) C(2)],'g-','LineWidth',2);
+    plot(app.UIAxes_2,[C(1) D(1)],[C(2) D(2)],'b-','LineWidth',2);
+
+    plot(app.UIAxes_2,[B(1) E(1)],[B(2) E(2)],'m-','LineWidth',2);
+    plot(app.UIAxes_2,[C(1) E(1)],[C(2) E(2)],'m--','LineWidth',2);
+
+    plot(app.UIAxes_2,[E(1) F(1)],[E(2) F(2)],'c-','LineWidth',2);
+    plot(app.UIAxes_2,[F(1) G(1)],[F(2) G(2)],'y-','LineWidth',2);
+
+    % Set the viewing area
+    allX = [A(1) B(1) C(1) D(1) E(1) F(1) G(1)];
+    allY = [A(2) B(2) C(2) D(2) E(2) F(2) G(2)];
+
+    margin = 2;
+
+    app.UIAxes_2.XLim = [min(allX)-margin max(allX)+margin];
+    app.UIAxes_2.YLim = [min(allY)-margin max(allY)+margin];
+
+    axis(app.UIAxes_2,'equal');
+
+    % Enabling the next button
+    app.ComputepositionAnalysisButton2.Enable = "on";
+    app.ProgressLamp_2.Enable = "on";
+    app.ProgressLamp_2Label.Enable = "on";
+
+
+
+        end
+
+        % Button pushed function: ComputepositionAnalysisButton2
+        function circleintersection2(app, event)
+        
+    app.ProgressLamp_2.Color = 'blue';
+    app.ProgressLamp_2Label.Text = 'In Progress';
+    drawnow;
+
+    % Input points
+    A = [app.AxEditField_2.Value app.AyEditField_2.Value 0];
+    B = [app.BxEditField_2.Value app.ByEditField_2.Value 0];
+    C = [app.CxEditField_2.Value app.CyEditField_2.Value 0];
+    D = [app.DxEditField_2.Value app.DyEditField_2.Value 0];
+    E = [app.ExEditField.Value app.EyEditField.Value 0];
+    F = [app.FxEditField.Value app.FyEditField.Value 0];
+
+    % Fixed point G
+    G = [0.5 0.6 0];
+
+    % Compute the initial angle of link AB, input link
+    initial_angle_AB = atan2(B(2)-A(2), B(1)-A(1));
+
+    if initial_angle_AB < 0
+        initial_angle_AB = initial_angle_AB + 2*pi;
+    end
+
+    % Initial values
+    app.new_B_joint_x(1) = B(1);
+    app.new_B_joint_y(1) = B(2);
+
+    app.new_C_joint_x(1) = C(1);
+    app.new_C_joint_y(1) = C(2);
+
+    app.new_E_joint_x(1) = E(1);
+    app.new_E_joint_y(1) = E(2);
+
+    app.new_F_joint_x(1) = F(1);
+    app.new_F_joint_y(1) = F(2);
+
+    % Compute link lengths
+    AB = norm(A-B);
+    BC = norm(B-C);
+    CD = norm(C-D);
+
+    BE = norm(B-E);
+    CE = norm(C-E);
+
+    EF = norm(E-F);
+    FG = norm(F-G);
+
+    app.lastIdx = 1;
+
+    for theta = 1:1:360
+
+        % Update B position
+        B_new = A + [AB*cos(initial_angle_AB + deg2rad(theta)), ...
+                     AB*sin(initial_angle_AB + deg2rad(theta)), 0];
+
+        app.new_B_joint_x(theta+1) = B_new(1);
+        app.new_B_joint_y(theta+1) = B_new(2);
+
+        
+        % Find C intersection of circle(B_new, BC) and circle(D, CD)
+        ptsC = app.circleCircleIntersection( ...
+            B_new(1:2), BC, D(1:2), CD);
+
+        if isempty(ptsC)
+            fprintf('New Position of C cannot be determined at angle: %d degree\n', theta);
+            break;
+        end
+
+        C_new = app.chooseClosestPoint(ptsC, C(1:2));
+
+        app.new_C_joint_x(theta+1) = C_new(1);
+        app.new_C_joint_y(theta+1) = C_new(2);
+
+        
+        % Find E intersection of circle(B_new, BE) and circle(C_new, CE)
+        
+        ptsE = app.circleCircleIntersection( ...
+            B_new(1:2), BE, C_new, CE);
+
+        if isempty(ptsE)
+            fprintf('New Position of E cannot be determined at angle: %d degree\n', theta);
+            break;
+        end
+
+        E_new = app.chooseClosestPoint(ptsE, E(1:2));
+
+        app.new_E_joint_x(theta+1) = E_new(1);
+        app.new_E_joint_y(theta+1) = E_new(2);
+
+        
+        % Find F intersection of circle(E_new, EF) and circle(G, FG)
+        
+        ptsF = app.circleCircleIntersection( ...
+            E_new, EF, G(1:2), FG);
+
+        if isempty(ptsF)
+            fprintf('New Position of F cannot be determined at angle: %d degree\n', theta);
+            break;
+        end
+
+        F_new = app.chooseClosestPoint(ptsF, F(1:2));
+
+        app.new_F_joint_x(theta+1) = F_new(1);
+        app.new_F_joint_y(theta+1) = F_new(2);
+
+        
+        % Update chain for next iteration
+        
+        B = B_new;
+        C = [C_new 0];
+        E = [E_new 0];
+        F = [F_new 0];
+
+        app.lastIdx = theta + 1;
+
+    end
+
+    
+    % Trim arrays to calculated positions
+    
+    app.new_B_joint_x = app.new_B_joint_x(1:app.lastIdx);
+    app.new_B_joint_y = app.new_B_joint_y(1:app.lastIdx);
+
+    app.new_C_joint_x = app.new_C_joint_x(1:app.lastIdx);
+    app.new_C_joint_y = app.new_C_joint_y(1:app.lastIdx);
+
+    app.new_E_joint_x = app.new_E_joint_x(1:app.lastIdx);
+    app.new_E_joint_y = app.new_E_joint_y(1:app.lastIdx);
+
+    app.new_F_joint_x = app.new_F_joint_x(1:app.lastIdx);
+    app.new_F_joint_y = app.new_F_joint_y(1:app.lastIdx);
+
+    
+    
+    
+    app.ProgressLamp_2.Color = 'g';
+    app.ProgressLamp_2Label.Text = 'Done';
+
+    app.ShowmovementButton_2.Enable = "on";
+    app.DownloaddataButton_2.Enable = "on";
+
+        end
+
+        % Button pushed function: ShowmovementButton_2
+        function showMovement2(app, event)
+      
+
+    cla(app.UIAxes_2);
+    hold(app.UIAxes_2,'on');
+
+    % Fixed points
+    A = [app.AxEditField_2.Value app.AyEditField_2.Value];
+    D = [app.DxEditField_2.Value app.DyEditField_2.Value];
+    G = [0.5 0.6];
+
+    % Trajectories
+    hBtraj = animatedline(app.UIAxes_2,'Color','black');
+    hCtraj = animatedline(app.UIAxes_2,'Color','g');
+    hEtraj = animatedline(app.UIAxes_2,'Color','m');
+    hFtraj = animatedline(app.UIAxes_2,'Color','c');
+
+    % Fixed points
+    plot(app.UIAxes_2,A(1),A(2),'rs','MarkerFaceColor','r');
+    plot(app.UIAxes_2,D(1),D(2),'rs','MarkerFaceColor','r');
+    plot(app.UIAxes_2,G(1),G(2),'ys','MarkerFaceColor','y');
+
+    % Initial links
+    hAB = plot(app.UIAxes_2,[A(1) app.new_B_joint_x(1)], ...
+        [A(2) app.new_B_joint_y(1)],'r-','LineWidth',2);
+
+    hBC = plot(app.UIAxes_2,[app.new_B_joint_x(1) app.new_C_joint_x(1)], ...
+        [app.new_B_joint_y(1) app.new_C_joint_y(1)],'g-','LineWidth',2);
+
+    hCD = plot(app.UIAxes_2,[app.new_C_joint_x(1) D(1)], ...
+        [app.new_C_joint_y(1) D(2)],'b-','LineWidth',2);
+
+    hBE = plot(app.UIAxes_2,[app.new_B_joint_x(1) app.new_E_joint_x(1)], ...
+        [app.new_B_joint_y(1) app.new_E_joint_y(1)],'m-','LineWidth',2);
+
+    hCE = plot(app.UIAxes_2,[app.new_C_joint_x(1) app.new_E_joint_x(1)], ...
+        [app.new_C_joint_y(1) app.new_E_joint_y(1)],'m--','LineWidth',2);
+
+    hEF = plot(app.UIAxes_2,[app.new_E_joint_x(1) app.new_F_joint_x(1)], ...
+        [app.new_E_joint_y(1) app.new_F_joint_y(1)],'c-','LineWidth',2);
+
+    hFG = plot(app.UIAxes_2,[app.new_F_joint_x(1) G(1)], ...
+        [app.new_F_joint_y(1) G(2)],'y-','LineWidth',2);
+
+    % Moving joints
+    hB = plot(app.UIAxes_2,app.new_B_joint_x(1), ...
+        app.new_B_joint_y(1),'bo','MarkerFaceColor','b');
+
+    hC = plot(app.UIAxes_2,app.new_C_joint_x(1), ...
+        app.new_C_joint_y(1),'go','MarkerFaceColor','g');
+
+    hE = plot(app.UIAxes_2,app.new_E_joint_x(1), ...
+        app.new_E_joint_y(1),'mo','MarkerFaceColor','m');
+
+    hF = plot(app.UIAxes_2,app.new_F_joint_x(1), ...
+        app.new_F_joint_y(1),'co','MarkerFaceColor','c');
+
+    axis(app.UIAxes_2,'equal');
+
+    for k = 1:app.lastIdx
+
+        Bx = app.new_B_joint_x(k);
+        By = app.new_B_joint_y(k);
+
+        Cx = app.new_C_joint_x(k);
+        Cy = app.new_C_joint_y(k);
+
+        Ex = app.new_E_joint_x(k);
+        Ey = app.new_E_joint_y(k);
+
+        Fx = app.new_F_joint_x(k);
+        Fy = app.new_F_joint_y(k);
+
+        % AB
+        set(hAB,'XData',[A(1) Bx], ...
+            'YData',[A(2) By]);
+
+        % BC
+        set(hBC,'XData',[Bx Cx], ...
+            'YData',[By Cy]);
+
+        % CD
+        set(hCD,'XData',[Cx D(1)], ...
+            'YData',[Cy D(2)]);
+
+        % BE
+        set(hBE,'XData',[Bx Ex], ...
+            'YData',[By Ey]);
+
+        % CE
+        set(hCE,'XData',[Cx Ex], ...
+            'YData',[Cy Ey]);
+
+        % EF
+        set(hEF,'XData',[Ex Fx], ...
+            'YData',[Ey Fy]);
+
+        % FG
+        set(hFG,'XData',[Fx G(1)], ...
+            'YData',[Fy G(2)]);
+
+        % Moving joints
+        set(hB,'XData',Bx,'YData',By);
+        set(hC,'XData',Cx,'YData',Cy);
+        set(hE,'XData',Ex,'YData',Ey);
+        set(hF,'XData',Fx,'YData',Fy);
+
+        % Trails
+        addpoints(hBtraj,Bx,By);
+        addpoints(hCtraj,Cx,Cy);
+        addpoints(hEtraj,Ex,Ey);
+        addpoints(hFtraj,Fx,Fy);
+
+        drawnow limitrate;
+        pause(0.01);
+
+    end
+
+    hold(app.UIAxes_2,'off');
+
+
+        end
+
+        % Button pushed function: DownloaddataButton
+        function downloadData(app, event)
+            % Create angle column
+    Angle = (0:app.lastIdx-1)';
+
+    % 6-bar joint positions
+    B_X = app.new_B_joint_x(:);
+    B_Y = app.new_B_joint_y(:);
+
+    C_X = app.new_C_joint_x(:);
+    C_Y = app.new_C_joint_y(:);
+
+    % Create data table
+    Data = table(Angle, B_X, B_Y, C_X, C_Y);
+
+    % Ask user where to save the data
+    [file, path] = uiputfile({'*.xlsx','Excel File (*.xlsx)'; ...
+                              '*.csv','CSV File (*.csv)'}, ...
+                              'Download Linkage Data');
+
+    % If user cancels
+    if isequal(file,0)
+        return;
+    end
+
+    % Create full file path
+    filename = fullfile(path,file);
+
+    % Save data
+    writetable(Data, filename);
+
+    % Update progress lamp
+    app.ProgressLamp_2.Color = 'g';
+    app.ProgressLamp_2Label.Text = 'Data Downloaded';
+
+        end
+
+        % Button pushed function: DownloaddataButton_2
+        function downloadData2(app, event)
+           
+
+                Angle = (0:app.lastIdx-1)';
+
+                A_X = repmat(app.AxEditField_2.Value,app.lastIdx,1);
+                A_Y = repmat(app.AyEditField_2.Value,app.lastIdx,1);
+
+                B_X = app.new_B_joint_x(:);
+                B_Y = app.new_B_joint_y(:);
+
+                C_X = app.new_C_joint_x(:);
+                C_Y = app.new_C_joint_y(:);
+
+                D_X = repmat(app.DxEditField_2.Value,app.lastIdx,1);
+                D_Y = repmat(app.DyEditField_2.Value,app.lastIdx,1);
+
+                E_X = app.new_E_joint_x(:);
+                E_Y = app.new_E_joint_y(:);
+
+                F_X = app.new_F_joint_x(:);
+                F_Y = app.new_F_joint_y(:);
+
+                Data = table(Angle, ...
+                    A_X,A_Y, ...
+                    B_X,B_Y, ...
+                    C_X,C_Y, ...
+                    D_X,D_Y, ...
+                    E_X,E_Y, ...
+                    F_X,F_Y);
+
+                [file,path] = uiputfile( ...
+                    {'*.xlsx','Excel File (*.xlsx)'; ...
+                    '*.csv','CSV File (*.csv)'}, ...
+                    'Download Linkage Data');
+
+                if isequal(file,0)
+                    return;
+                end
+
+                filename = fullfile(path,file);
+
+                writetable(Data,filename);
+
+                app.ProgressLamp_2.Color = 'g';
+                app.ProgressLamp_2Label.Text = 'Data Downloaded';
+
+            %% development of functions aided by generative ai
+
+        end
+    end
+
+    % Component initialization
+    methods (Access = private)
+
+        % Create UIFigure and components
+        function createComponents(app)
+
+            % Create UIFigure and hide until all components are created
+            app.UIFigure = uifigure('Visible', 'off');
+            app.UIFigure.Position = [100 100 676 508];
+            app.UIFigure.Name = 'MATLAB App';
+
+            % Create TabGroup
+            app.TabGroup = uitabgroup(app.UIFigure);
+            app.TabGroup.Position = [22 19 633 477];
+
+            % Create jointlinkageTab
+            app.jointlinkageTab = uitab(app.TabGroup);
+            app.jointlinkageTab.Title = '4 joint linkage';
+
+            % Create UIAxes
+            app.UIAxes = uiaxes(app.jointlinkageTab);
+            title(app.UIAxes, 'Linkage')
+            xlabel(app.UIAxes, 'X')
+            ylabel(app.UIAxes, 'Y')
+            zlabel(app.UIAxes, 'Z')
+            app.UIAxes.Position = [291 62 300 185];
+
+            % Create DownloaddataButton
+            app.DownloaddataButton = uibutton(app.jointlinkageTab, 'push');
+            app.DownloaddataButton.ButtonPushedFcn = createCallbackFcn(app, @downloadData, true);
+            app.DownloaddataButton.Enable = 'off';
+            app.DownloaddataButton.Position = [66 85 100 22];
+            app.DownloaddataButton.Text = 'Download data';
+
+            % Create ShowmovementButton
+            app.ShowmovementButton = uibutton(app.jointlinkageTab, 'push');
+            app.ShowmovementButton.ButtonPushedFcn = createCallbackFcn(app, @showMovement, true);
+            app.ShowmovementButton.Enable = 'off';
+            app.ShowmovementButton.Position = [64 131 104 22];
+            app.ShowmovementButton.Text = 'Show movement';
+
+            % Create ComputepositionAnalysisButton
+            app.ComputepositionAnalysisButton = uibutton(app.jointlinkageTab, 'push');
+            app.ComputepositionAnalysisButton.ButtonPushedFcn = createCallbackFcn(app, @circleintersection, true);
+            app.ComputepositionAnalysisButton.Enable = 'off';
+            app.ComputepositionAnalysisButton.Position = [39 176 155 22];
+            app.ComputepositionAnalysisButton.Text = 'Compute position Analysis';
+
+            % Create GenerateLinkageButton
+            app.GenerateLinkageButton = uibutton(app.jointlinkageTab, 'push');
+            app.GenerateLinkageButton.ButtonPushedFcn = createCallbackFcn(app, @generateLinkage, true);
+            app.GenerateLinkageButton.Position = [59 212 110 22];
+            app.GenerateLinkageButton.Text = 'Generate Linkage';
+
+            % Create AxEditFieldLabel
+            app.AxEditFieldLabel = uilabel(app.jointlinkageTab);
+            app.AxEditFieldLabel.HorizontalAlignment = 'right';
+            app.AxEditFieldLabel.Position = [24 421 25 22];
+            app.AxEditFieldLabel.Text = 'Ax';
+
+            % Create AxEditField
+            app.AxEditField = uieditfield(app.jointlinkageTab, 'numeric');
+            app.AxEditField.Position = [64 421 100 22];
+
+            % Create AyEditFieldLabel
+            app.AyEditFieldLabel = uilabel(app.jointlinkageTab);
+            app.AyEditFieldLabel.HorizontalAlignment = 'right';
+            app.AyEditFieldLabel.Position = [183 421 25 22];
+            app.AyEditFieldLabel.Text = 'Ay';
+
+            % Create AyEditField
+            app.AyEditField = uieditfield(app.jointlinkageTab, 'numeric');
+            app.AyEditField.Position = [223 421 100 22];
+
+            % Create BxEditFieldLabel
+            app.BxEditFieldLabel = uilabel(app.jointlinkageTab);
+            app.BxEditFieldLabel.HorizontalAlignment = 'right';
+            app.BxEditFieldLabel.Position = [24 391 25 22];
+            app.BxEditFieldLabel.Text = 'Bx';
+
+            % Create BxEditField
+            app.BxEditField = uieditfield(app.jointlinkageTab, 'numeric');
+            app.BxEditField.Position = [64 391 100 22];
+
+            % Create ByEditFieldLabel
+            app.ByEditFieldLabel = uilabel(app.jointlinkageTab);
+            app.ByEditFieldLabel.HorizontalAlignment = 'right';
+            app.ByEditFieldLabel.Position = [183 391 25 22];
+            app.ByEditFieldLabel.Text = 'By';
+
+            % Create ByEditField
+            app.ByEditField = uieditfield(app.jointlinkageTab, 'numeric');
+            app.ByEditField.Position = [223 391 100 22];
+            app.ByEditField.Value = 5;
+
+            % Create CxEditFieldLabel
+            app.CxEditFieldLabel = uilabel(app.jointlinkageTab);
+            app.CxEditFieldLabel.HorizontalAlignment = 'right';
+            app.CxEditFieldLabel.Position = [24 360 25 22];
+            app.CxEditFieldLabel.Text = 'Cx';
+
+            % Create CxEditField
+            app.CxEditField = uieditfield(app.jointlinkageTab, 'numeric');
+            app.CxEditField.Position = [64 360 100 22];
+            app.CxEditField.Value = 5;
+
+            % Create CyEditFieldLabel
+            app.CyEditFieldLabel = uilabel(app.jointlinkageTab);
+            app.CyEditFieldLabel.HorizontalAlignment = 'right';
+            app.CyEditFieldLabel.Position = [183 360 25 22];
+            app.CyEditFieldLabel.Text = 'Cy';
+
+            % Create CyEditField
+            app.CyEditField = uieditfield(app.jointlinkageTab, 'numeric');
+            app.CyEditField.Position = [223 360 100 22];
+            app.CyEditField.Value = 5;
+
+            % Create DxEditFieldLabel
+            app.DxEditFieldLabel = uilabel(app.jointlinkageTab);
+            app.DxEditFieldLabel.HorizontalAlignment = 'right';
+            app.DxEditFieldLabel.Position = [27 326 25 22];
+            app.DxEditFieldLabel.Text = 'Dx';
+
+            % Create DxEditField
+            app.DxEditField = uieditfield(app.jointlinkageTab, 'numeric');
+            app.DxEditField.Position = [67 326 100 22];
+            app.DxEditField.Value = 8;
+
+            % Create DyEditFieldLabel
+            app.DyEditFieldLabel = uilabel(app.jointlinkageTab);
+            app.DyEditFieldLabel.HorizontalAlignment = 'right';
+            app.DyEditFieldLabel.Position = [183 326 25 22];
+            app.DyEditFieldLabel.Text = 'Dy';
+
+            % Create DyEditField
+            app.DyEditField = uieditfield(app.jointlinkageTab, 'numeric');
+            app.DyEditField.Position = [223 326 100 22];
+
+            % Create ProgressLampLabel
+            app.ProgressLampLabel = uilabel(app.jointlinkageTab);
+            app.ProgressLampLabel.HorizontalAlignment = 'right';
+            app.ProgressLampLabel.Enable = 'off';
+            app.ProgressLampLabel.Position = [61 152 53 22];
+            app.ProgressLampLabel.Text = 'Progress';
+
+            % Create ProgressLamp
+            app.ProgressLamp = uilamp(app.jointlinkageTab);
+            app.ProgressLamp.Enable = 'off';
+            app.ProgressLamp.Position = [129 152 20 20];
+
+            % Create jointlinkageTab_2
+            app.jointlinkageTab_2 = uitab(app.TabGroup);
+            app.jointlinkageTab_2.Title = '6 joint linkage';
+
+            % Create UIAxes_2
+            app.UIAxes_2 = uiaxes(app.jointlinkageTab_2);
+            title(app.UIAxes_2, 'Linkage')
+            xlabel(app.UIAxes_2, 'X')
+            ylabel(app.UIAxes_2, 'Y')
+            zlabel(app.UIAxes_2, 'Z')
+            app.UIAxes_2.Position = [291 62 300 185];
+
+            % Create ExEditFieldLabel
+            app.ExEditFieldLabel = uilabel(app.jointlinkageTab_2);
+            app.ExEditFieldLabel.HorizontalAlignment = 'right';
+            app.ExEditFieldLabel.Position = [32 287 17 22];
+            app.ExEditFieldLabel.Text = 'Ex';
+
+            % Create ExEditField
+            app.ExEditField = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.ExEditField.Position = [66 287 100 22];
+            app.ExEditField.Value = 2;
+
+            % Create EyEditFieldLabel
+            app.EyEditFieldLabel = uilabel(app.jointlinkageTab_2);
+            app.EyEditFieldLabel.HorizontalAlignment = 'right';
+            app.EyEditFieldLabel.Position = [182 292 25 22];
+            app.EyEditFieldLabel.Text = 'Ey';
+
+            % Create EyEditField
+            app.EyEditField = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.EyEditField.Position = [222 292 100 22];
+            app.EyEditField.Value = 2;
+
+            % Create FxEditFieldLabel
+            app.FxEditFieldLabel = uilabel(app.jointlinkageTab_2);
+            app.FxEditFieldLabel.HorizontalAlignment = 'right';
+            app.FxEditFieldLabel.Position = [27 252 25 22];
+            app.FxEditFieldLabel.Text = 'Fx';
+
+            % Create FxEditField
+            app.FxEditField = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.FxEditField.Position = [67 252 100 22];
+            app.FxEditField.Value = 1.5;
+
+            % Create FyEditFieldLabel
+            app.FyEditFieldLabel = uilabel(app.jointlinkageTab_2);
+            app.FyEditFieldLabel.HorizontalAlignment = 'right';
+            app.FyEditFieldLabel.Position = [186 252 25 22];
+            app.FyEditFieldLabel.Text = 'Fy';
+
+            % Create FyEditField
+            app.FyEditField = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.FyEditField.Position = [226 252 100 22];
+            app.FyEditField.Value = 2.5;
+
+            % Create DownloaddataButton_2
+            app.DownloaddataButton_2 = uibutton(app.jointlinkageTab_2, 'push');
+            app.DownloaddataButton_2.ButtonPushedFcn = createCallbackFcn(app, @downloadData2, true);
+            app.DownloaddataButton_2.Enable = 'off';
+            app.DownloaddataButton_2.Position = [66 85 100 22];
+            app.DownloaddataButton_2.Text = 'Download data';
+
+            % Create ShowmovementButton_2
+            app.ShowmovementButton_2 = uibutton(app.jointlinkageTab_2, 'push');
+            app.ShowmovementButton_2.ButtonPushedFcn = createCallbackFcn(app, @showMovement2, true);
+            app.ShowmovementButton_2.Enable = 'off';
+            app.ShowmovementButton_2.Position = [64 131 104 22];
+            app.ShowmovementButton_2.Text = 'Show movement';
+
+            % Create ComputepositionAnalysisButton2
+            app.ComputepositionAnalysisButton2 = uibutton(app.jointlinkageTab_2, 'push');
+            app.ComputepositionAnalysisButton2.ButtonPushedFcn = createCallbackFcn(app, @circleintersection2, true);
+            app.ComputepositionAnalysisButton2.Enable = 'off';
+            app.ComputepositionAnalysisButton2.Position = [39 176 155 22];
+            app.ComputepositionAnalysisButton2.Text = 'Compute position Analysis';
+
+            % Create GenerateLinkageButton_2
+            app.GenerateLinkageButton_2 = uibutton(app.jointlinkageTab_2, 'push');
+            app.GenerateLinkageButton_2.ButtonPushedFcn = createCallbackFcn(app, @generateLinkage2, true);
+            app.GenerateLinkageButton_2.Position = [59 212 110 22];
+            app.GenerateLinkageButton_2.Text = 'Generate Linkage';
+
+            % Create AxEditField_2Label
+            app.AxEditField_2Label = uilabel(app.jointlinkageTab_2);
+            app.AxEditField_2Label.HorizontalAlignment = 'right';
+            app.AxEditField_2Label.Position = [24 421 25 22];
+            app.AxEditField_2Label.Text = 'Ax';
+
+            % Create AxEditField_2
+            app.AxEditField_2 = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.AxEditField_2.Position = [64 421 100 22];
+            app.AxEditField_2.Value = 1;
+
+            % Create AyEditField_2Label
+            app.AyEditField_2Label = uilabel(app.jointlinkageTab_2);
+            app.AyEditField_2Label.HorizontalAlignment = 'right';
+            app.AyEditField_2Label.Position = [183 421 25 22];
+            app.AyEditField_2Label.Text = 'Ay';
+
+            % Create AyEditField_2
+            app.AyEditField_2 = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.AyEditField_2.Position = [223 421 100 22];
+
+            % Create BxEditField_2Label
+            app.BxEditField_2Label = uilabel(app.jointlinkageTab_2);
+            app.BxEditField_2Label.HorizontalAlignment = 'right';
+            app.BxEditField_2Label.Position = [24 391 25 22];
+            app.BxEditField_2Label.Text = 'Bx';
+
+            % Create BxEditField_2
+            app.BxEditField_2 = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.BxEditField_2.Position = [64 391 100 22];
+            app.BxEditField_2.Value = 1.5;
+
+            % Create ByEditField_2Label
+            app.ByEditField_2Label = uilabel(app.jointlinkageTab_2);
+            app.ByEditField_2Label.HorizontalAlignment = 'right';
+            app.ByEditField_2Label.Position = [183 391 25 22];
+            app.ByEditField_2Label.Text = 'By';
+
+            % Create ByEditField_2
+            app.ByEditField_2 = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.ByEditField_2.Position = [223 391 100 22];
+            app.ByEditField_2.Value = 1;
+
+            % Create CxEditField_2Label
+            app.CxEditField_2Label = uilabel(app.jointlinkageTab_2);
+            app.CxEditField_2Label.HorizontalAlignment = 'right';
+            app.CxEditField_2Label.Position = [24 360 25 22];
+            app.CxEditField_2Label.Text = 'Cx';
+
+            % Create CxEditField_2
+            app.CxEditField_2 = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.CxEditField_2.Position = [64 360 100 22];
+            app.CxEditField_2.Value = 3;
+
+            % Create CyEditField_2Label
+            app.CyEditField_2Label = uilabel(app.jointlinkageTab_2);
+            app.CyEditField_2Label.HorizontalAlignment = 'right';
+            app.CyEditField_2Label.Position = [183 360 25 22];
+            app.CyEditField_2Label.Text = 'Cy';
+
+            % Create CyEditField_2
+            app.CyEditField_2 = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.CyEditField_2.Position = [223 360 100 22];
+            app.CyEditField_2.Value = 1;
+
+            % Create DxEditField_2Label
+            app.DxEditField_2Label = uilabel(app.jointlinkageTab_2);
+            app.DxEditField_2Label.HorizontalAlignment = 'right';
+            app.DxEditField_2Label.Position = [27 326 25 22];
+            app.DxEditField_2Label.Text = 'Dx';
+
+            % Create DxEditField_2
+            app.DxEditField_2 = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.DxEditField_2.Position = [67 326 100 22];
+            app.DxEditField_2.Value = 3.5;
+
+            % Create DyEditField_2Label
+            app.DyEditField_2Label = uilabel(app.jointlinkageTab_2);
+            app.DyEditField_2Label.HorizontalAlignment = 'right';
+            app.DyEditField_2Label.Position = [182 327 25 22];
+            app.DyEditField_2Label.Text = 'Dy';
+
+            % Create DyEditField_2
+            app.DyEditField_2 = uieditfield(app.jointlinkageTab_2, 'numeric');
+            app.DyEditField_2.Position = [222 327 100 22];
+
+            % Create ProgressLamp_2Label
+            app.ProgressLamp_2Label = uilabel(app.jointlinkageTab_2);
+            app.ProgressLamp_2Label.HorizontalAlignment = 'right';
+            app.ProgressLamp_2Label.Enable = 'off';
+            app.ProgressLamp_2Label.Position = [61 152 53 22];
+            app.ProgressLamp_2Label.Text = 'Progress';
+
+            % Create ProgressLamp_2
+            app.ProgressLamp_2 = uilamp(app.jointlinkageTab_2);
+            app.ProgressLamp_2.Enable = 'off';
+            app.ProgressLamp_2.Position = [129 152 20 20];
+
+            % Show the figure after all components are created
+            app.UIFigure.Visible = 'on';
+        end
+    end
+
+    % App creation and deletion
+    methods (Access = public)
+
+        % Construct app
+        function app = appfinal
+
+            % Create UIFigure and components
+            createComponents(app)
+
+            % Register the app with App Designer
+            registerApp(app, app.UIFigure)
+
+            % Execute the startup function
+            runStartupFcn(app, @startupFcn)
+
+            if nargout == 0
+                clear app
+            end
+        end
+
+        % Code that executes before app deletion
+        function delete(app)
+
+            % Delete UIFigure when app is deleted
+            delete(app.UIFigure)
+        end
+    end
+end
